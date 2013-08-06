@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 
 	"github.com/cespare/blackfriday"
 )
 
 // TODO: Syntax highlighting
-// TODO: -s
 // TODO: -w
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
+
+const tempfile = "/tmp/markdownd_tempfile.html"
 
 var (
 	serve = flag.Bool("s", false, "Open the output in your browser.")
@@ -56,21 +58,59 @@ func fatal(args ...interface{}) {
 	os.Exit(1)
 }
 
+// bopen opens some (possibly file://) url in a browser.
+func bopen(url string) error {
+	cmd := exec.Command(openProgram, url)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
+}
+
 func main() {
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
 		usage(1)
 	}
 
-	if *serve || *watch {
-		panic("unimplemented")
-	}
+	f := os.Stdin
+
 	if flag.NArg() > 0 {
-		panic("unimplemented")
+		var err error
+		f, err = os.Open(flag.Arg(0))
+		if err != nil {
+			fatal(err)
+		}
+		defer f.Close()
 	}
 
-	input, err := ioutil.ReadAll(os.Stdin)
+	input, err := ioutil.ReadAll(f)
 	if err != nil {
 		fatal(err)
 	}
-	os.Stdout.Write(render(input))
+	rendered := render(input)
+
+	// Embed the output in an HTML page with some nice CSS, unless we're printing the output directly to stdout.
+	if *serve || *watch {
+		rendered = append([]byte(htmlHeader), rendered...)
+		rendered = append(rendered, []byte(htmlFooter)...)
+	}
+
+	switch {
+	case *watch:
+		panic("unimplemented")
+	case *serve:
+		// Write to a temp file and open it in a browser, then exit.
+		temp, err := os.Create(tempfile)
+		if err != nil {
+			fatal("Could not create a tempfile:", err)
+		}
+		if _, err := temp.Write(rendered); err != nil {
+			fatal(err)
+		}
+		if err := bopen(temp.Name()); err != nil {
+			fatal(err)
+		}
+	default:
+		// Just write to stdout and we're done.
+		os.Stdout.Write(rendered)
+	}
 }
