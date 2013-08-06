@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +19,6 @@ import (
 	"github.com/howeyc/fsnotify"
 )
 
-// TODO: Syntax highlighting
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
 const tempfile = "/tmp/markdownd_tempfile.html"
@@ -32,11 +33,36 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
+	pygmentize     = filepath.Join(filepath.Dir(os.Args[0]), "vendor/pygments/pygmentize")
+	validLanguages = make(map[string]struct{})
+
 	mu       sync.RWMutex // protects rendered
 	rendered []byte
 )
 
-func init() { flag.Parse() }
+func init() {
+	flag.Parse()
+
+	if _, err := os.Stat(pygmentize); err != nil {
+		fatal("Pygments not found:", err)
+	}
+
+	rawLexerList, err := exec.Command(pygmentize, "-L", "lexers").Output()
+	if err != nil {
+		fatal(err)
+	}
+	for _, line := range bytes.Split(rawLexerList, []byte("\n")) {
+		if len(line) == 0 || line[0] != '*' {
+			continue
+		}
+		for _, l := range bytes.Split(bytes.Trim(line, "* :"), []byte(",")) {
+			lexer := string(bytes.TrimSpace(l))
+			if len(lexer) != 0 {
+				validLanguages[lexer] = struct{}{}
+			}
+		}
+	}
+}
 
 func usage(status int) {
 	fmt.Printf(`Usage:
@@ -52,12 +78,28 @@ where OPTIONS are:
 	os.Exit(status)
 }
 
+func syntaxHighlight(out io.Writer, in io.Reader, language string) {
+	_, ok := validLanguages[language]
+	if !ok || language == "" {
+		language = "text"
+	}
+	pygmentsCmd := exec.Command(pygmentize, "-l", language, "-f", "html", "-P", "encoding=utf-8")
+	pygmentsCmd.Stdin = in
+	pygmentsCmd.Stdout = out
+	var stderr bytes.Buffer
+	pygmentsCmd.Stderr = &stderr
+	if err := pygmentsCmd.Run(); err != nil {
+		fatal(err)
+	}
+}
+
 // Render renders some markdown with syntax highlighting. It would be nicer if blackfriday.Markdown operated
 // on io.Readers/Writers, but it uses []bytes so we need to fully buffer everything.
 func render(input []byte) []byte {
 	flags := 0
 	flags |= blackfriday.HTML_GITHUB_BLOCKCODE
 	renderer := blackfriday.HtmlRenderer(flags, "", "")
+	renderer.SetBlockCodeProcessor(syntaxHighlight)
 
 	extensions := 0
 	extensions |= blackfriday.EXTENSION_FENCED_CODE
@@ -77,7 +119,7 @@ func renderFromFile(filename string) ([]byte, error) {
 }
 
 func fatal(args ...interface{}) {
-	fmt.Println(args...)
+	fmt.Fprintln(os.Stderr, args...)
 	os.Exit(1)
 }
 
@@ -92,7 +134,7 @@ func bopen(url string) error {
 func updateListener(filename string) (<-chan bool, error) {
 	// Normalize the name to "./foobar" form if it is relative like "foobar"
 	if !strings.HasPrefix(filename, "./") && !strings.HasPrefix(filename, "/") {
-		filename = "./"+filename
+		filename = "./" + filename
 	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
