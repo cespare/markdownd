@@ -19,6 +19,9 @@ import (
 	"github.com/howeyc/fsnotify"
 )
 
+// TODO: Fix paths when markdownd is installed via go get. Need to look at the proper place in $GOPATH to find
+// vendor. Alternative approach: use go-bindata to pack pygments into the binary; the first time markdownd
+// runs, expand pygments into /usr/local (or whatever).
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
 const (
@@ -231,7 +234,8 @@ func makeUpdateHandler(update <-chan bool) http.HandlerFunc {
 				fmt.Fprint(w, "data:update\n\n")
 				w.Flush()
 			case <-closed:
-				return
+				// We're ready to exit now, because the user closed the page.
+				os.Exit(0)
 			}
 		}
 	}
