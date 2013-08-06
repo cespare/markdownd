@@ -21,7 +21,10 @@ import (
 
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
-const tempfile = "/tmp/markdownd_tempfile.html"
+const (
+	tempfile   = "/tmp/markdownd_tempfile.html"
+	pygmentPath = "vendor/pygments/pygmentize"
+)
 
 var (
 	serve = flag.Bool("s", false, "Open the output in your browser.")
@@ -33,7 +36,7 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
-	pygmentize     = filepath.Join(filepath.Dir(os.Args[0]), "vendor/pygments/pygmentize")
+	pygmentize string
 	validLanguages = make(map[string]struct{})
 
 	mu       sync.RWMutex // protects rendered
@@ -42,6 +45,13 @@ var (
 
 func init() {
 	flag.Parse()
+
+	// Try to figure out where pygments is.
+	exe, err := exec.LookPath(os.Args[0])
+	if err != nil {
+		fatal("Cannot locate markdownd executable.")
+	}
+	pygmentize = filepath.Join(filepath.Dir(exe), pygmentPath)
 
 	if _, err := os.Stat(pygmentize); err != nil {
 		fatal("Pygments not found:", err)
