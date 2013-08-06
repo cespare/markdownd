@@ -145,10 +145,6 @@ func bopen(url string) error {
 }
 
 func updateListener(filename string) (<-chan bool, error) {
-	// Normalize the name to "./foobar" form if it is relative like "foobar"
-	if !strings.HasPrefix(filename, "./") && !strings.HasPrefix(filename, "/") {
-		filename = "./" + filename
-	}
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -159,7 +155,7 @@ func updateListener(filename string) (<-chan bool, error) {
 		for {
 			select {
 			case e := <-watcher.Event:
-				if e.Name != filename {
+				if strings.TrimPrefix(e.Name, "./") != strings.TrimPrefix(filename, "./") {
 					continue
 				}
 				if e.IsDelete() {
