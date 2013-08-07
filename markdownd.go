@@ -19,19 +19,14 @@ import (
 	"github.com/howeyc/fsnotify"
 )
 
-// TODO: Fix paths when markdownd is installed via go get. Need to look at the proper place in $GOPATH to find
-// vendor. Alternative approach: use go-bindata to pack pygments into the binary; the first time markdownd
-// runs, expand pygments into /usr/local (or whatever).
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
-const (
-	tempfile   = "/tmp/markdownd_tempfile.html"
-	pygmentPath = "vendor/pygments/pygmentize"
-)
+const tempfile = "/tmp/markdownd_tempfile.html"
 
 var (
 	serve = flag.Bool("s", false, "Open the output in your browser.")
 	watch = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload.")
+	verbose = flag.Bool("v", false, "Print some debugging information.")
 
 	sseHeaders = [][2]string{
 		{"Content-Type", "text/event-stream"},
@@ -39,25 +34,28 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
-	pygmentize string
+	pygmentize     string
 	validLanguages = make(map[string]struct{})
 
 	mu       sync.RWMutex // protects rendered
 	rendered []byte
 )
 
+type debug struct{}
+var dbg = debug{}
+func (debug) Println(args ...interface{}) {
+	if *verbose {
+		fmt.Fprintln(os.Stderr, append([]interface{}{"DEBUG:"}, args...)...)
+	}
+}
+
 func init() {
 	flag.Parse()
 
-	// Try to figure out where pygments is.
-	exe, err := exec.LookPath(os.Args[0])
+	var err error
+	pygmentize, err = findPygments()
 	if err != nil {
-		fatal("Cannot locate markdownd executable.")
-	}
-	pygmentize = filepath.Join(filepath.Dir(exe), pygmentPath)
-
-	if _, err := os.Stat(pygmentize); err != nil {
-		fatal("Pygments not found:", err)
+		fatal("Pygments could not be loaded:", err)
 	}
 
 	rawLexerList, err := exec.Command(pygmentize, "-L", "lexers").Output()
