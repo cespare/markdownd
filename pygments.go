@@ -61,7 +61,7 @@ func findPygments() (string, error) {
 		if string(bytes.TrimSpace(oldMD5)) == VendorMD5 {
 			// Up-to-date
 			dbg.Println("found up-to-date cached pygments.")
-			return pygmentPath, nil
+			return pygmentize, nil
 		}
 		fmt.Fprintln(os.Stderr, "Updating stale cache in", cache)
 	}
