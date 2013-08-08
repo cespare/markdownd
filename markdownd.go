@@ -24,8 +24,8 @@ import (
 const tempfile = "/tmp/markdownd_tempfile.html"
 
 var (
-	serve = flag.Bool("s", false, "Open the output in your browser.")
-	watch = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload.")
+	serve   = flag.Bool("s", false, "Open the output in your browser.")
+	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload.")
 	verbose = flag.Bool("v", false, "Print some debugging information.")
 
 	sseHeaders = [][2]string{
@@ -34,6 +34,7 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
+	python         string
 	pygmentize     string
 	validLanguages = make(map[string]struct{})
 
@@ -42,7 +43,9 @@ var (
 )
 
 type debug struct{}
+
 var dbg = debug{}
+
 func (debug) Println(args ...interface{}) {
 	if *verbose {
 		fmt.Fprintln(os.Stderr, append([]interface{}{"DEBUG:"}, args...)...)
@@ -53,12 +56,16 @@ func init() {
 	flag.Parse()
 
 	var err error
+	python, err = findPython()
+	if err != nil {
+		fatal(err)
+	}
 	pygmentize, err = findPygments()
 	if err != nil {
 		fatal("Pygments could not be loaded:", err)
 	}
 
-	rawLexerList, err := exec.Command(pygmentize, "-L", "lexers").Output()
+	rawLexerList, err := exec.Command(python, pygmentize, "-L", "lexers").Output()
 	if err != nil {
 		fatal(err)
 	}
@@ -94,7 +101,7 @@ func syntaxHighlight(out io.Writer, in io.Reader, language string) {
 	if !ok || language == "" {
 		language = "text"
 	}
-	pygmentsCmd := exec.Command(pygmentize, "-l", language, "-f", "html", "-P", "encoding=utf-8")
+	pygmentsCmd := exec.Command(python, pygmentize, "-l", language, "-f", "html", "-P", "encoding=utf-8")
 	pygmentsCmd.Stdin = in
 	pygmentsCmd.Stdout = out
 	var stderr bytes.Buffer
