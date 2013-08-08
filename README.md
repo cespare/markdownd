@@ -15,8 +15,8 @@ For now, you need to install from source. Install Go 1.1+, then
 
 ## Protips
 
-Here are two lines I use in my `.vimrc` to make it really quick to open the current markdown file in a browser
-and have it auto-refresh when the file changes:
+Here are two lines I use in my [`.vimrc`](https://github.com/cespare/vim-config/blob/master/vimrc) to make it
+really quick to open the current markdown file in a browser and have it auto-refresh when the file changes:
 
 ``` vimscript
 command! Markdownd !markdownd -w % >/dev/null &
