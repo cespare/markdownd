@@ -41,6 +41,7 @@ pre, code {
   font-family: "Ubuntu Mono", Courier, monospace;
   background-color: #F0EEEA;
   padding: 2px;
+  overflow: auto;
 }
 .highlight pre {
   padding-left: 6px;
