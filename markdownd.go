@@ -38,7 +38,7 @@ var (
 	pygmentize     string
 	validLanguages = make(map[string]struct{})
 
-	mu       sync.RWMutex // protects rendered
+	mu       = sync.RWMutex{} // protects rendered
 	rendered []byte
 )
 
