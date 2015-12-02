@@ -47,7 +47,7 @@ pre, code {
   padding-left: 6px;
 }
 #wrapper {
-  width: 900px;
+  max-width: 800px;
   margin: 50px auto;
   border: 3px solid #ccc;
   padding: 0px 15px;
