@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"net"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -268,8 +269,8 @@ func renderMarkdown() error {
 	return nil
 }
 
-// serve serves output on a local webserver. The caller should Close the server it gets back.
-func makeServer(updates <-chan bool) *httptest.Server {
+// startServer serves output on a local webserver running at the returned URL.
+func startServer(updates <-chan bool) (url string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
@@ -280,7 +281,19 @@ func makeServer(updates <-chan bool) *httptest.Server {
 		w.Write(rendered)
 	})
 	mux.HandleFunc("/updates", makeUpdateHandler(updates))
-	return httptest.NewServer(mux)
+	return startLocalServer(mux)
+}
+
+func startLocalServer(handler http.Handler) (url string) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		if ln, err = net.Listen("tcp6", "[::1]:0"); err != nil {
+			log.Fatalf("failed to listen on a port: %v", err)
+		}
+	}
+	s := &http.Server{Handler: handler}
+	go s.Serve(ln)
+	return "http://" + ln.Addr().String()
 }
 
 func main() {
@@ -298,10 +311,9 @@ func main() {
 		if err != nil {
 			fatal(err)
 		}
-		server := makeServer(updates)
-		defer server.Close()
-		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), server.URL)
-		if err := bopen(server.URL); err != nil {
+		url := startServer(updates)
+		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
+		if err := bopen(url); err != nil {
 			fatal(err)
 		}
 		// Just sit and block infinitely.
