@@ -59,16 +59,16 @@ func init() {
 	var err error
 	python, err = findPython()
 	if err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
 	pygmentize, err = findPygments()
 	if err != nil {
-		fatal("Pygments could not be loaded:", err)
+		log.Fatal("Pygments could not be loaded:", err)
 	}
 
 	rawLexerList, err := exec.Command(python, pygmentize, "-L", "lexers").Output()
 	if err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
 	for _, line := range bytes.Split(rawLexerList, []byte("\n")) {
 		if len(line) == 0 || line[0] != '*' {
@@ -108,7 +108,7 @@ func syntaxHighlight(out io.Writer, in io.Reader, language string) {
 	var stderr bytes.Buffer
 	pygmentsCmd.Stderr = &stderr
 	if err := pygmentsCmd.Run(); err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
 }
 
@@ -136,11 +136,6 @@ func renderFromFile(filename string) ([]byte, error) {
 		return nil, err
 	}
 	return render(input), nil
-}
-
-func fatal(args ...interface{}) {
-	fmt.Fprintln(os.Stderr, args...)
-	os.Exit(1)
 }
 
 // bopen opens some (possibly file://) url in a browser.
@@ -288,7 +283,7 @@ func startLocalServer(handler http.Handler) (url string) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		if ln, err = net.Listen("tcp6", "[::1]:0"); err != nil {
-			log.Fatalf("failed to listen on a port: %v", err)
+			log.Fatalf("Failed to listen on a port: %v", err)
 		}
 	}
 	s := &http.Server{Handler: handler}
@@ -297,24 +292,26 @@ func startLocalServer(handler http.Handler) (url string) {
 }
 
 func main() {
+	log.SetFlags(0)
+
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
 		usage(1)
 	}
 
 	if err := renderMarkdown(); err != nil {
-		fatal(err)
+		log.Fatal(err)
 	}
 
 	switch {
 	case *watch:
 		updates, err := updateListener(flag.Arg(0))
 		if err != nil {
-			fatal(err)
+			log.Fatal(err)
 		}
 		url := startServer(updates)
 		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
 		if err := bopen(url); err != nil {
-			fatal(err)
+			log.Fatal(err)
 		}
 		// Just sit and block infinitely.
 		select {}
@@ -322,13 +319,13 @@ func main() {
 		// Write to a temp file and open it in a browser, then exit.
 		temp, err := os.Create(tempfile)
 		if err != nil {
-			fatal("Could not create a tempfile:", err)
+			log.Fatal("Could not create a tempfile:", err)
 		}
 		if _, err := temp.Write(rendered); err != nil {
-			fatal(err)
+			log.Fatal(err)
 		}
 		if err := bopen(temp.Name()); err != nil {
-			fatal(err)
+			log.Fatal(err)
 		}
 	default:
 		// Just write to stdout and we're done.
