@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/blackfriday"
-	"github.com/howeyc/fsnotify"
+	"github.com/fsnotify/fsnotify"
+	"github.com/russross/blackfriday/v2"
 )
 
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
@@ -94,22 +94,12 @@ func main() {
 	}
 }
 
-// render renders markdown text. It would be nicer if blackfriday.Markdown
-// operated on io.Readers/Writers, but it uses []bytes so we need to fully
-// buffer everything.
+// render renders markdown text.
 func render(input []byte) []byte {
-	flags := 0
-	flags |= blackfriday.HTML_GITHUB_BLOCKCODE
-	renderer := blackfriday.HtmlRenderer(flags, "", "")
-
-	extensions := 0
-	extensions |= blackfriday.EXTENSION_FENCED_CODE
-	extensions |= blackfriday.EXTENSION_TABLES
-	extensions |= blackfriday.EXTENSION_NO_INTRA_EMPHASIS
-	extensions |= blackfriday.EXTENSION_AUTOLINK
-	extensions |= blackfriday.EXTENSION_NO_EMPTY_LINE_BEFORE_BLOCK
-
-	return blackfriday.Markdown(input, renderer, extensions)
+	ext := blackfriday.CommonExtensions
+	ext |= blackfriday.Tables
+	ext |= blackfriday.NoEmptyLineBeforeBlock
+	return blackfriday.Run(input, blackfriday.WithExtensions(ext))
 }
 
 func renderFromFile(filename string) ([]byte, error) {
@@ -138,28 +128,27 @@ func updateListener(filename string) (<-chan struct{}, error) {
 	go func() {
 		for {
 			select {
-			case e := <-watcher.Event:
+			case e := <-watcher.Events:
 				if strings.TrimPrefix(e.Name, "./") != strings.TrimPrefix(filename, "./") {
 					continue
 				}
-				if e.IsDelete() {
+				if e.Op&fsnotify.Remove != 0 {
 					// Need to reset the watch. No way to report errors
 					// if this doesn't work for some reason.
-					watcher.RemoveWatch(filename)
-					watcher.Watch(filename)
+					watcher.Remove(filename)
 				}
 				// Nonblocking send (if nobody's listening, skip it and move on).
 				select {
 				case c <- struct{}{}:
 				default:
 				}
-			case err := <-watcher.Error:
+			case err := <-watcher.Errors:
 				fmt.Println("fsnotify error:", err)
 			}
 		}
 	}()
 
-	if err := watcher.Watch(filepath.Dir(filename)); err != nil {
+	if err := watcher.Add(filepath.Dir(filename)); err != nil {
 		return nil, err
 	}
 	return reRender(c), nil
