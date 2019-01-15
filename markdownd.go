@@ -37,18 +37,61 @@ var (
 	rendered []byte
 )
 
-func usage(status int) {
-	fmt.Printf(`Usage:
-  $ %s [OPTIONS] [MARKDOWN_FILE]
-where OPTIONS are:
+func usage() {
+	fmt.Fprintf(os.Stderr, `usage: %s [flags] [filename]
+Flags:
 `, os.Args[0])
 	flag.PrintDefaults()
-	fmt.Println(`and MARKDOWN_FILE is some file containing markdown.
-- If MARKDOWN_FILE is not given, markdownd will read markdown text from stdin.
-- If you specify -w, you must specify MARKDOWN_FILE (stdin doesn't make sense).
-- -w implies -s.
-- If neither -w nor -s are given, the output is written to stdout.`)
-	os.Exit(status)
+	fmt.Fprintln(os.Stderr, `
+Markdownd renders the provided file containing markdown text.
+If no filename is given, markdownd reads markdown text from stdin.
+If -w is used, a filename must also be given. The -w flag implies the -s flag.
+If neither -w nor -s are given, the output is written to stdout.`)
+}
+
+func main() {
+	log.SetFlags(0)
+	flag.Usage = usage
+	flag.Parse()
+
+	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
+		usage()
+		os.Exit(1)
+	}
+
+	if err := renderMarkdown(); err != nil {
+		log.Fatal(err)
+	}
+
+	switch {
+	case *watch:
+		updates, err := updateListener(flag.Arg(0))
+		if err != nil {
+			log.Fatal(err)
+		}
+		url := startServer(updates)
+		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
+		if err := bopen(url); err != nil {
+			log.Fatal(err)
+		}
+		// Just sit and block infinitely.
+		select {}
+	case *serve:
+		// Write to a temp file and open it in a browser, then exit.
+		temp, err := os.Create(tempfile)
+		if err != nil {
+			log.Fatal("Could not create a tempfile:", err)
+		}
+		if _, err := temp.Write(rendered); err != nil {
+			log.Fatal(err)
+		}
+		if err := bopen(temp.Name()); err != nil {
+			log.Fatal(err)
+		}
+	default:
+		// Just write to stdout and we're done.
+		os.Stdout.Write(rendered)
+	}
 }
 
 // render renders markdown text. It would be nicer if blackfriday.Markdown
@@ -85,13 +128,13 @@ func bopen(url string) error {
 	return cmd.Run()
 }
 
-func updateListener(filename string) (<-chan bool, error) {
+func updateListener(filename string) (<-chan struct{}, error) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
 	}
 
-	c := make(chan bool)
+	c := make(chan struct{})
 	go func() {
 		for {
 			select {
@@ -100,13 +143,14 @@ func updateListener(filename string) (<-chan bool, error) {
 					continue
 				}
 				if e.IsDelete() {
-					// Need to reset the watch. No way to report errors if this doesn't work for some reason.
+					// Need to reset the watch. No way to report errors
+					// if this doesn't work for some reason.
 					watcher.RemoveWatch(filename)
 					watcher.Watch(filename)
 				}
 				// Nonblocking send (if nobody's listening, skip it and move on).
 				select {
-				case c <- true:
+				case c <- struct{}{}:
 				default:
 				}
 			case err := <-watcher.Error:
@@ -121,12 +165,15 @@ func updateListener(filename string) (<-chan bool, error) {
 	return reRender(c), nil
 }
 
-// reRender re-renders the markdown on updates. It handles bursty events by batching slightly.
-func reRender(updates <-chan bool) <-chan bool {
-	out := make(chan bool)
+// reRender re-renders the markdown on updates.
+// It handles bursty events by batching slightly.
+func reRender(updates <-chan struct{}) <-chan struct{} {
+	out := make(chan struct{})
+	t := time.NewTimer(0)
+	<-t.C
 	go func() {
-		for _ = range updates {
-			t := time.NewTimer(50 * time.Millisecond)
+		for range updates {
+			t.Reset(50 * time.Millisecond)
 		loop:
 			for {
 				select {
@@ -139,39 +186,30 @@ func reRender(updates <-chan bool) <-chan bool {
 			if err := renderMarkdown(); err != nil {
 				fmt.Println("Warning:", err)
 			}
-			out <- true
+			out <- struct{}{}
 		}
 	}()
 	return out
 }
 
-// Unification of http.ResponseWriter, http.Flusher, and http.CloseNotifier
-type HTTPWriter interface {
-	Header() http.Header
-	Write([]byte) (int, error)
-	WriteHeader(int)
-	Flush()
-	CloseNotify() <-chan bool
-}
-
-func makeUpdateHandler(update <-chan bool) http.HandlerFunc {
-	return func(writer http.ResponseWriter, r *http.Request) {
-		w, ok := writer.(HTTPWriter)
+func makeUpdateHandler(update <-chan struct{}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
 		if !ok {
-			panic("HTTP server does not support Flusher and/or CloseNotifier needed for SSE.")
+			panic("HTTP server does not support Flusher needed for SSE")
 		}
-		closed := w.CloseNotify()
 		for _, header := range sseHeaders {
 			w.Header().Set(header[0], header[1])
 		}
+		done := r.Context().Done()
 
 		for {
 			select {
 			case <-update:
 				fmt.Fprint(w, "data:update\n\n")
-				w.Flush()
-			case <-closed:
-				// We're ready to exit now, because the user closed the page.
+				flusher.Flush()
+			case <-done:
+				// Exit now because the user closed the page.
 				os.Exit(0)
 			}
 		}
@@ -195,7 +233,8 @@ func renderMarkdown() error {
 		rendered = render(input)
 	}
 
-	// Embed the output in an HTML page with some nice CSS, unless we're printing the output directly to stdout.
+	// Embed the output in an HTML page with some nice CSS
+	// unless we're printing the output directly to stdout.
 	if *serve || *watch {
 		rendered = append([]byte(htmlHeader), rendered...)
 		rendered = append(rendered, []byte(htmlFooter)...)
@@ -204,7 +243,7 @@ func renderMarkdown() error {
 }
 
 // startServer serves output on a local webserver running at the returned URL.
-func startServer(updates <-chan bool) (url string) {
+func startServer(updates <-chan struct{}) (url string) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
@@ -228,47 +267,4 @@ func startLocalServer(handler http.Handler) (url string) {
 	s := &http.Server{Handler: handler}
 	go s.Serve(ln)
 	return "http://" + ln.Addr().String()
-}
-
-func main() {
-	log.SetFlags(0)
-	flag.Parse()
-
-	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
-		usage(1)
-	}
-
-	if err := renderMarkdown(); err != nil {
-		log.Fatal(err)
-	}
-
-	switch {
-	case *watch:
-		updates, err := updateListener(flag.Arg(0))
-		if err != nil {
-			log.Fatal(err)
-		}
-		url := startServer(updates)
-		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
-		if err := bopen(url); err != nil {
-			log.Fatal(err)
-		}
-		// Just sit and block infinitely.
-		select {}
-	case *serve:
-		// Write to a temp file and open it in a browser, then exit.
-		temp, err := os.Create(tempfile)
-		if err != nil {
-			log.Fatal("Could not create a tempfile:", err)
-		}
-		if _, err := temp.Write(rendered); err != nil {
-			log.Fatal(err)
-		}
-		if err := bopen(temp.Name()); err != nil {
-			log.Fatal(err)
-		}
-	default:
-		// Just write to stdout and we're done.
-		os.Stdout.Write(rendered)
-	}
 }
