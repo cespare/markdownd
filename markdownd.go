@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -25,9 +23,9 @@ import (
 const tempfile = "/tmp/markdownd_tempfile.html"
 
 var (
-	serve   = flag.Bool("s", false, "Open the output in your browser.")
-	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload.")
-	verbose = flag.Bool("v", false, "Print some debugging information.")
+	serve   = flag.Bool("s", false, "Open the output in a browser")
+	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload")
+	verbose = flag.Bool("v", false, "Print some debugging information")
 
 	sseHeaders = [][2]string{
 		{"Content-Type", "text/event-stream"},
@@ -35,53 +33,9 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
-	python         string
-	pygmentize     string
-	validLanguages = make(map[string]struct{})
-
 	mu       = sync.RWMutex{} // protects rendered
 	rendered []byte
 )
-
-type debug struct{}
-
-var dbg = debug{}
-
-func (debug) Println(args ...interface{}) {
-	if *verbose {
-		fmt.Fprintln(os.Stderr, append([]interface{}{"DEBUG:"}, args...)...)
-	}
-}
-
-func init() {
-	flag.Parse()
-
-	var err error
-	python, err = findPython()
-	if err != nil {
-		log.Fatal(err)
-	}
-	pygmentize, err = findPygments()
-	if err != nil {
-		log.Fatal("Pygments could not be loaded:", err)
-	}
-
-	rawLexerList, err := exec.Command(python, pygmentize, "-L", "lexers").Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-	for _, line := range bytes.Split(rawLexerList, []byte("\n")) {
-		if len(line) == 0 || line[0] != '*' {
-			continue
-		}
-		for _, l := range bytes.Split(bytes.Trim(line, "* :"), []byte(",")) {
-			lexer := string(bytes.TrimSpace(l))
-			if len(lexer) != 0 {
-				validLanguages[lexer] = struct{}{}
-			}
-		}
-	}
-}
 
 func usage(status int) {
 	fmt.Printf(`Usage:
@@ -97,28 +51,13 @@ where OPTIONS are:
 	os.Exit(status)
 }
 
-func syntaxHighlight(out io.Writer, in io.Reader, language string) {
-	_, ok := validLanguages[language]
-	if !ok || language == "" {
-		language = "text"
-	}
-	pygmentsCmd := exec.Command(python, pygmentize, "-l", language, "-f", "html", "-P", "encoding=utf-8")
-	pygmentsCmd.Stdin = in
-	pygmentsCmd.Stdout = out
-	var stderr bytes.Buffer
-	pygmentsCmd.Stderr = &stderr
-	if err := pygmentsCmd.Run(); err != nil {
-		log.Fatal(err)
-	}
-}
-
-// Render renders some markdown with syntax highlighting. It would be nicer if blackfriday.Markdown operated
-// on io.Readers/Writers, but it uses []bytes so we need to fully buffer everything.
+// render renders markdown text. It would be nicer if blackfriday.Markdown
+// operated on io.Readers/Writers, but it uses []bytes so we need to fully
+// buffer everything.
 func render(input []byte) []byte {
 	flags := 0
 	flags |= blackfriday.HTML_GITHUB_BLOCKCODE
 	renderer := blackfriday.HtmlRenderer(flags, "", "")
-	renderer.SetBlockCodeProcessor(syntaxHighlight)
 
 	extensions := 0
 	extensions |= blackfriday.EXTENSION_FENCED_CODE
@@ -293,6 +232,7 @@ func startLocalServer(handler http.Handler) (url string) {
 
 func main() {
 	log.SetFlags(0)
+	flag.Parse()
 
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
 		usage(1)
