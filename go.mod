@@ -6,3 +6,5 @@ require (
 	github.com/shurcooL/sanitized_anchor_name v1.0.0 // indirect
 	golang.org/x/sys v0.0.0-20190115152922-a457fd036447 // indirect
 )
+
+go 1.13
