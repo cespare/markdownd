@@ -20,8 +20,6 @@ import (
 
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
-const tempfile = "/tmp/markdownd_tempfile.html"
-
 var (
 	serve   = flag.Bool("s", false, "Open the output in a browser")
 	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload")
@@ -33,14 +31,18 @@ var (
 		{"Connection", "keep-alive"},
 	}
 
-	mu       = sync.RWMutex{} // protects rendered
+	mu       sync.RWMutex // protects rendered
 	rendered []byte
 )
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `usage: %s [flags] [filename]
-Flags:
-`, os.Args[0])
+	fmt.Fprint(os.Stderr, `Usage:
+
+  markdownd [flags] [file]
+
+The flags are:
+
+`)
 	flag.PrintDefaults()
 	fmt.Fprintln(os.Stderr, `
 Markdownd renders the provided file containing markdown text.
@@ -56,7 +58,7 @@ func main() {
 
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
 		usage()
-		os.Exit(1)
+		os.Exit(2)
 	}
 
 	if err := renderMarkdown(); err != nil {
@@ -78,7 +80,9 @@ func main() {
 		select {}
 	case *serve:
 		// Write to a temp file and open it in a browser, then exit.
-		temp, err := os.Create(tempfile)
+		// Use a single path so we overwrite a single file rather than
+		// creating a bunch of tempfiles that we never clean up.
+		temp, err := os.Create(filepath.Join(os.TempDir(), "markdownd.html"))
 		if err != nil {
 			log.Fatal("Could not create a tempfile:", err)
 		}
