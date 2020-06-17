@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -15,7 +16,8 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/russross/blackfriday/v2"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 )
 
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
@@ -100,10 +102,14 @@ func main() {
 
 // render renders markdown text.
 func render(input []byte) []byte {
-	ext := blackfriday.CommonExtensions
-	ext |= blackfriday.Tables
-	ext |= blackfriday.NoEmptyLineBeforeBlock
-	return blackfriday.Run(input, blackfriday.WithExtensions(ext))
+	md := goldmark.New(goldmark.WithExtensions(extension.GFM))
+	var buf bytes.Buffer
+	if err := md.Convert(input, &buf); err != nil {
+		// Only error should be on writes (there is no invalid
+		// markdown).
+		panic(err)
+	}
+	return buf.Bytes()
 }
 
 func renderFromFile(filename string) ([]byte, error) {
