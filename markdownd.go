@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -37,29 +37,27 @@ var (
 	rendered []byte
 )
 
-func usage() {
-	fmt.Fprint(os.Stderr, `Usage:
+func main() {
+	log.SetFlags(0)
+	flag.Usage = func() {
+		fmt.Fprint(os.Stderr, `Usage:
 
   markdownd [flags] [file]
 
 The flags are:
 
 `)
-	flag.PrintDefaults()
-	fmt.Fprintln(os.Stderr, `
+		flag.PrintDefaults()
+		fmt.Fprintln(os.Stderr, `
 Markdownd renders the provided file containing markdown text.
 If no filename is given, markdownd reads markdown text from stdin.
 If -w is used, a filename must also be given. The -w flag implies the -s flag.
 If neither -w nor -s are given, the output is written to stdout.`)
-}
-
-func main() {
-	log.SetFlags(0)
-	flag.Usage = usage
+	}
 	flag.Parse()
 
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
-		usage()
+		flag.Usage()
 		os.Exit(2)
 	}
 
@@ -113,7 +111,7 @@ func render(input []byte) []byte {
 }
 
 func renderFromFile(filename string) ([]byte, error) {
-	input, err := ioutil.ReadFile(filename)
+	input, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +223,7 @@ func renderMarkdown() error {
 			return err
 		}
 	} else {
-		input, err := ioutil.ReadAll(os.Stdin)
+		input, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -244,7 +242,7 @@ func renderMarkdown() error {
 // startServer serves output on a local webserver running at the returned URL.
 func startServer(updates <-chan struct{}) (url string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		mu.RLock()
 		defer mu.RUnlock()
 		if r.FormValue("nojs") != "true" {
@@ -252,7 +250,7 @@ func startServer(updates <-chan struct{}) (url string) {
 		}
 		w.Write(rendered)
 	})
-	mux.HandleFunc("/updates", makeUpdateHandler(updates))
+	mux.HandleFunc("GET /updates", makeUpdateHandler(updates))
 	return startLocalServer(mux)
 }
 

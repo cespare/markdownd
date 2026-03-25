@@ -1,9 +1,10 @@
 module github.com/cespare/markdownd
 
+go 1.26.0
+
 require (
-	github.com/fsnotify/fsnotify v1.5.1
-	github.com/yuin/goldmark v1.4.0
-	golang.org/x/sys v0.0.0-20210831042530-f4d43177bf5e // indirect
+	github.com/fsnotify/fsnotify v1.9.0
+	github.com/yuin/goldmark v1.8.1
 )
 
-go 1.13
+require golang.org/x/sys v0.42.0 // indirect

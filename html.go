@@ -3,19 +3,13 @@ package main
 const jsHeader = `
 <head>
 <script type="application/javascript">
-var source = new EventSource("/updates");
-var handler = function(e) {
-	var xhr = new XMLHttpRequest();
-	xhr.onreadystatechange = function() {
-		if (xhr.readyState != 4 || xhr.status != 200) {
-			return;
-		}
-		document.body.innerHTML = xhr.responseText;
-	}
-	xhr.open("GET", "?nojs=true", true);
-	xhr.send();
-}
-source.addEventListener("message", handler, false);
+const source = new EventSource("/updates");
+source.addEventListener("message", async () => {
+  const response = await fetch("?nojs=true");
+  if (response.ok) {
+    document.body.innerHTML = await response.text();
+  }
+});
 </script>
 </head>
 `
@@ -57,7 +51,6 @@ pre, code {
 `
 
 const htmlFooter = `
-</div>
 </div>
 </body>
 `
