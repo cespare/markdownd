@@ -23,7 +23,6 @@ import (
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
 var (
-	serve   = flag.Bool("s", false, "Open the output in a browser")
 	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload")
 	verbose = flag.Bool("v", false, "Print some debugging information")
 
@@ -54,8 +53,8 @@ The flags are:
 		fmt.Fprintln(os.Stderr, `
 Markdownd renders the provided file containing markdown text.
 If no filename is given, markdownd reads markdown text from stdin.
-If -w is used, a filename must also be given. The -w flag implies the -s flag.
-If neither -w nor -s are given, the output is written to stdout.`)
+If -w is used, a filename must also be given.
+If -w is not given, the output is written to stdout.`)
 	}
 	flag.Parse()
 
@@ -83,34 +82,23 @@ If neither -w nor -s are given, the output is written to stdout.`)
 		log.Fatal(err)
 	}
 
-	switch {
-	case *watch:
-		updates, err := updateListener(flag.Arg(0))
-		if err != nil {
-			log.Fatal(err)
-		}
-		url := startServer(updates)
-		fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
-		if err := bopen(url); err != nil {
-			log.Fatal(err)
-		}
-		// Just sit and block infinitely.
-		select {}
-	case *serve:
-		url := startServer(nil)
-		if flag.NArg() > 0 {
-			fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
-		} else {
-			fmt.Printf("Serving markdown at %s\n", url)
-		}
-		if err := bopen(url); err != nil {
-			log.Fatal(err)
-		}
-		select {}
-	default:
+	if !*watch {
 		// Just write to stdout and we're done.
 		os.Stdout.Write(rendered)
+		return
 	}
+
+	updates, err := updateListener(flag.Arg(0))
+	if err != nil {
+		log.Fatal(err)
+	}
+	url := startServer(updates)
+	fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
+	if err := bopen(url); err != nil {
+		log.Fatal(err)
+	}
+	// Sit and block infinitely.
+	select {}
 }
 
 func gitRepoRoot(dir string) string {
@@ -298,7 +286,7 @@ func renderMarkdown() error {
 
 	// Embed the output in an HTML page with some nice CSS
 	// unless we're printing the output directly to stdout.
-	if *serve || *watch {
+	if *watch {
 		rendered = append([]byte(htmlHeader), rendered...)
 		rendered = append(rendered, []byte(htmlFooter)...)
 	}
