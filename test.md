@@ -35,6 +35,10 @@ This is a second paragraph to verify spacing between paragraphs. It contains a
   - Nested item B
     - Deeply nested item
 - Item three
+  ```
+  Code block inside a nested context
+  More code
+  ```
 
 ## Ordered Lists
 
