@@ -6,7 +6,7 @@ changes.
 
 ## Installation
 
-For now, you need to install from source. With Go 1.16+, run
+For now, you need to install from source. With Go 1.21+, run
 
     go install github.com/cespare/markdownd@latest
 
