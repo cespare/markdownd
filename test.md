@@ -109,6 +109,8 @@ Content below the rules.
 
 ## Images
 
+![Alt text for an image](doctor.png)
+
 ![Alt text for a missing image](missing.png)
 
 ## Links

@@ -35,6 +35,9 @@ var (
 
 	mu       sync.RWMutex // protects rendered
 	rendered []byte
+
+	baseDir  string // directory containing the markdown file, or cwd
+	repoRoot string // root of the containing git repo, or ""
 )
 
 func main() {
@@ -55,6 +58,21 @@ If -w is used, a filename must also be given. The -w flag implies the -s flag.
 If neither -w nor -s are given, the output is written to stdout.`)
 	}
 	flag.Parse()
+
+	if flag.NArg() > 0 {
+		absPath, err := filepath.Abs(flag.Arg(0))
+		if err != nil {
+			log.Fatal(err)
+		}
+		baseDir = filepath.Dir(absPath)
+	} else {
+		var err error
+		baseDir, err = os.Getwd()
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	repoRoot = gitRepoRoot(baseDir)
 
 	if (flag.NArg() == 0 && *watch) || flag.NArg() > 1 {
 		flag.Usage()
@@ -79,23 +97,71 @@ If neither -w nor -s are given, the output is written to stdout.`)
 		// Just sit and block infinitely.
 		select {}
 	case *serve:
-		// Write to a temp file and open it in a browser, then exit.
-		// Use a single path so we overwrite a single file rather than
-		// creating a bunch of tempfiles that we never clean up.
-		temp, err := os.Create(filepath.Join(os.TempDir(), "markdownd.html"))
-		if err != nil {
-			log.Fatal("Could not create a tempfile:", err)
+		url := startServer(nil)
+		if flag.NArg() > 0 {
+			fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
+		} else {
+			fmt.Printf("Serving markdown at %s\n", url)
 		}
-		if _, err := temp.Write(rendered); err != nil {
+		if err := bopen(url); err != nil {
 			log.Fatal(err)
 		}
-		if err := bopen(temp.Name()); err != nil {
-			log.Fatal(err)
-		}
+		select {}
 	default:
 		// Just write to stdout and we're done.
 		os.Stdout.Write(rendered)
 	}
+}
+
+func gitRepoRoot(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+var imageExts = map[string]struct{}{
+	".apng": {},
+	".avif": {},
+	".bmp":  {},
+	".gif":  {},
+	".ico":  {},
+	".jpg":  {},
+	".jpeg": {},
+	".png":  {},
+	".svg":  {},
+	".tif":  {},
+	".tiff": {},
+	".webp": {},
+}
+
+func imageHandler(w http.ResponseWriter, r *http.Request) {
+	if _, ok := imageExts[strings.ToLower(filepath.Ext(r.URL.Path))]; !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	rel := strings.TrimPrefix(r.URL.Path, "/")
+
+	// Try relative to the markdown file's directory.
+	fsPath := filepath.Join(baseDir, rel)
+	if _, err := os.Stat(fsPath); err == nil {
+		http.ServeFile(w, r, fsPath)
+		return
+	}
+
+	// Try relative to the git repo root.
+	if repoRoot != "" && repoRoot != baseDir {
+		fsPath = filepath.Join(repoRoot, rel)
+		if _, err := os.Stat(fsPath); err == nil {
+			http.ServeFile(w, r, fsPath)
+			return
+		}
+	}
+
+	http.NotFound(w, r)
 }
 
 // render renders markdown text.
@@ -251,6 +317,7 @@ func startServer(updates <-chan struct{}) (url string) {
 		w.Write(rendered)
 	})
 	mux.HandleFunc("GET /updates", makeUpdateHandler(updates))
+	mux.HandleFunc("GET /", imageHandler)
 	return startLocalServer(mux)
 }
 
