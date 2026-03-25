@@ -93,7 +93,7 @@ If -w is not given, the output is written to stdout.`)
 		log.Fatal(err)
 	}
 	url := startServer(updates)
-	fmt.Printf("Serving markdown rendered from %s at %s\n", flag.Arg(0), url)
+	log.Printf("Serving markdown rendered from %s at %s", flag.Arg(0), url)
 	if err := bopen(url); err != nil {
 		log.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func updateListener(filename string) (<-chan struct{}, error) {
 				default:
 				}
 			case err := <-watcher.Errors:
-				fmt.Println("fsnotify error:", err)
+				log.Println("fsnotify error:", err)
 			}
 		}
 	}()
@@ -235,7 +235,7 @@ func reRender(updates <-chan struct{}) <-chan struct{} {
 				}
 			}
 			if err := renderMarkdown(); err != nil {
-				fmt.Println("Warning:", err)
+				log.Println("Warning:", err)
 			}
 			out <- struct{}{}
 		}
