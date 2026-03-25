@@ -23,8 +23,7 @@ import (
 // TODO: Allow for specifying the browser? (bcat has -b for this.)
 
 var (
-	watch   = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload")
-	verbose = flag.Bool("v", false, "Print some debugging information")
+	watch = flag.Bool("w", false, "Open the output in a browser and watch the input file for changes to reload")
 
 	sseHeaders = [][2]string{
 		{"Content-Type", "text/event-stream"},
